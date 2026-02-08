@@ -1,64 +1,75 @@
-# This file is part of knotdnssd.
+# This file is part of knotdiscovery.
 #
 # For license and copyright information please follow this link:
-# https://github.com/noseam-env/knotdnssd/blob/master/LEGAL
+# https://github.com/nelonn/knotdiscovery/blob/master/LEGAL
 
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.15)
 
-project(knotdnssd LANGUAGES C CXX)
+project(knotdiscovery LANGUAGES C)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_EXTENSIONS OFF)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 
-add_library(knotdnssd include/knot/dnssd.h src/util.c src/util.h)
+add_library(knotdiscovery
+        include/knot/discovery.h
+        src/adapter.c
+        src/adapter.h
+)
 
-target_compile_definitions(knotdnssd PRIVATE KNOTDNSSD_IMPLEMENTATION)
+get_target_property(KNOTDISCOVERY_LIB_TYPE knotdiscovery TYPE)
+if (KNOTDISCOVERY_LIB_TYPE STREQUAL "SHARED_LIBRARY")
+    #set_target_properties(knotdiscovery PROPERTIES
+    #        C_VISIBILITY_PRESET hidden
+    #        CXX_VISIBILITY_PRESET hidden
+    #        VISIBILITY_INLINES_HIDDEN ON
+    #)
 
-if (ANDROID)
-    # TODO: noop.cpp
-elseif (CMAKE_SYSTEM_NAME MATCHES "Linux")
-    # Not recommended to enable this option
-    # You should install: libavahi-compat-libdnssd-dev or avahi-compat-libdns_sd-devel
-    option(KNOTDNSSD_USE_AVAHI_COMPAT "Use avahi-compat-libdns_sd" OFF)
-
-    #list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
-    include(cmake/FindDBus.cmake)
-    include(cmake/FindAvahi.cmake)
-    list(APPEND KNOTDNSSD_LIBS Avahi::common Avahi::client)
-    if (KNOTDNSSD_USE_AVAHI_COMPAT)
-        target_sources(knotdnssd PRIVATE src/bonjour.cpp)
-        target_compile_definitions(knotdnssd PRIVATE USE_BONJOUR)
-        target_compile_definitions(knotdnssd PRIVATE AVAHI_BONJOUR_COMPAT)
-        list(APPEND KNOTDNSSD_LIBS Avahi::common Avahi::compat-libdns_sd)
-    else ()
-        target_sources(knotdnssd PRIVATE src/avahi.cpp)
-        target_compile_definitions(knotdnssd PRIVATE USE_AVAHI)
-    endif ()
-else ()
-    target_sources(knotdnssd PRIVATE src/bonjour.cpp)
-    target_compile_definitions(knotdnssd PRIVATE USE_BONJOUR)
-    if (WIN32)
-        set(BONJOUR_SDK_HOME "$ENV{BONJOUR_SDK_HOME}")
-        if (NOT BONJOUR_SDK_HOME)
-            message(FATAL_ERROR "BONJOUR_SDK_HOME is not defined")
-        endif ()
-        set(DNSSD_INCLUDE_DIR "${BONJOUR_SDK_HOME}/Include")
-        # TODO: ARM support
-        if (CMAKE_SIZEOF_VOID_P EQUAL 8)
-            set(DNSSD_LIBRARY "${BONJOUR_SDK_HOME}/Lib/x64/dnssd.lib")
-        else ()
-            set(DNSSD_LIBRARY "${BONJOUR_SDK_HOME}/Lib/Win32/dnssd.lib")
-        endif ()
-        set(KNOTDNSSD_INCLUDE ${KNOTDNSSD_INCLUDE} ${DNSSD_INCLUDE_DIR})
-        list(APPEND KNOTDNSSD_LIBS ws2_32 ${DNSSD_LIBRARY})
-    endif ()
+    target_compile_definitions(knotdiscovery PRIVATE KNOTDISCOVERY_DYNAMIC)
+    target_compile_definitions(knotdiscovery PUBLIC KNOTDISCOVERY_DYNAMIC_IMPORT)
 endif ()
 
-target_include_directories(knotdnssd PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_include_directories(knotdnssd PRIVATE ${KNOTDNSSD_INCLUDE})
+if (ANDROID)
+    target_compile_definitions(knotdiscovery PRIVATE KNOTDISCOVERY_ANDROID)
+    target_sources(knotdiscovery PRIVATE src/android.c)
+elseif (CMAKE_SYSTEM_NAME MATCHES "Linux" OR CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
+    # avahi-compat supports only service discovery, service registration is broken
+    # for testing and development purposes only
+    option(KNOTDISCOVERY_USE_AVAHI_COMPAT "Use avahi-compat-libdns_sd" OFF)
 
-target_link_libraries(knotdnssd PRIVATE ${KNOTDNSSD_LIBS})
+    #list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
+    include(cmake/FindAvahi.cmake)
+    target_include_directories(knotdiscovery PRIVATE ${Avahi_INCLUDE_DIRS})
+
+    if (Avahi_FOUND AND KNOTDISCOVERY_USE_AVAHI_COMPAT)
+        target_sources(knotdiscovery PRIVATE src/bonjour.c)
+        target_compile_definitions(knotdiscovery PRIVATE KNOTDISCOVERY_BONJOUR)
+        target_compile_definitions(knotdiscovery PRIVATE KNOTDISCOVERY_AVAHI_BONJOUR_COMPAT)
+    else ()
+        if (Avahi_FOUND)
+            target_sources(knotdiscovery PRIVATE src/avahi.c)
+            target_compile_definitions(knotdiscovery PRIVATE KNOTDISCOVERY_AVAHI)
+        endif ()
+
+        target_sources(knotdiscovery PRIVATE src/mdnsh.c)
+        target_compile_definitions(knotdiscovery PRIVATE KNOTDISCOVERY_MDNSH)
+    endif ()
+elseif (WIN32 OR APPLE)
+    target_sources(knotdiscovery PRIVATE src/bonjour.c)
+    target_compile_definitions(knotdiscovery PRIVATE KNOTDISCOVERY_BONJOUR)
+    if (WIN32)
+        target_sources(knotdiscovery PRIVATE src/mdnsh.c)
+        target_compile_definitions(knotdiscovery PRIVATE KNOTDISCOVERY_MDNSH)
+        target_link_libraries(knotdiscovery PRIVATE ws2_32 iphlpapi)
+    endif ()
+elseif (ESP_PLATFORM)
+    target_sources(knotdiscovery PRIVATE src/esp.c)
+    target_compile_definitions(knotdiscovery PRIVATE KNOTDISCOVERY_ESP)
+else ()
+    target_compile_definitions(knotdiscovery PRIVATE KNOTDISCOVERY_NOOP)
+endif ()
+
+target_include_directories(knotdiscovery PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 if (PROJECT_IS_TOP_LEVEL)
     add_subdirectory(example)

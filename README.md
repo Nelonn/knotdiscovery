@@ -1,18 +1,21 @@
-# libknotdnssd
+# knotdiscovery
 
-Library that wraps DNS Service Discovery libraries
+Library that wraps local service discovery libraries without linking like SDL3
 
-- **Linux**: Runtime: `sudo apt-get install avahi-daemon` Dev: `sudo apt install libavahi-common-dev libavahi-client-dev`
-- **macOS**: Supported out of box
-- **Windows**: Runtime `redist/Bonjour64` Dev: `redist/bonjoursdksetup.exe`
-- **iOS**: Not tested, probably out of box
-- **Android**: Implement dnssd.h header with JNI by yourself :)
+All platforms work out of the box; some offer optional system runtimes for improved stability.
+
+- **Linux**/**FreeBSD**: Bundled mDNS, or optional: `sudo apt-get install avahi-daemon` Dev: `sudo apt install libavahi-common-dev libavahi-client-dev`
+- **macOS**: Bonjour
+- **Windows**: Bundled mDNS, or via more stable Bonjour: `redist/Bonjour64.msi`
+- **Android**: NSD via JNI
+- **iOS**: Bonjour
+- **ESP32**: ESP mDNS
 
 ## License
 
 The library is licensed under the [MIT License](https://opensource.org/license/mit/):
 
-Copyright (C) 2025 Michael Neonov <two.nelonn at gmail.com>
+Copyright (C) 2026 Michael Neonov <two.nelonn at gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

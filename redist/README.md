@@ -2,9 +2,7 @@
 
 This software is required to run, develop and compile `libknotdnssd` on Windows
 
-`Bonjour64.msi` is needed for runtime
-
-`bonjoursdksetup.exe` is needed for development and compiling
+`Bonjour64.msi` provides `mDNSResponder.exe` service and `dnssd.dll` library
 
 ### License
 

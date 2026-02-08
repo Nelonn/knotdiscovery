@@ -99,32 +99,32 @@ if(Avahi_FOUND)
     set(Avahi_INCLUDE_DIRS ${Avahi_INCLUDE_DIR})
 endif()
 
-if(Avahi_FOUND AND NOT TARGET Avahi::common)
-    add_library(Avahi::common UNKNOWN IMPORTED)
-    set_target_properties(Avahi::common PROPERTIES
-            IMPORTED_LOCATION "${Avahi_common_LIBRARY}"
-            INTERFACE_INCLUDE_DIRECTORIES "${Avahi_INCLUDE_DIR}"
-            INTERFACE_LINK_LIBRARIES "Threads::Threads"
-    )
-endif()
-
-if(Avahi_FOUND AND NOT TARGET Avahi::client)
-    add_library(Avahi::client UNKNOWN IMPORTED)
-    set_target_properties(Avahi::client PROPERTIES
-            IMPORTED_LOCATION "${Avahi_client_LIBRARY}"
-            INTERFACE_INCLUDE_DIRECTORIES "${Avahi_INCLUDE_DIR}"
-            INTERFACE_LINK_LIBRARIES "Avahi::common;DBus::DBus"
-    )
-endif()
-
-if(Avahi_FOUND AND NOT TARGET Avahi::compat-libdns_sd)
-    add_library(Avahi::compat-libdns_sd UNKNOWN IMPORTED)
-    set_target_properties(Avahi::compat-libdns_sd PROPERTIES
-            IMPORTED_LOCATION "${Avahi_compat-libdns_sd_LIBRARY}"
-            INTERFACE_INCLUDE_DIRECTORIES "${Avahi_INCLUDE_DIR}"
-            INTERFACE_LINK_LIBRARIES "Avahi::client"
-    )
-endif()
+#if(Avahi_FOUND AND NOT TARGET Avahi::common)
+#    add_library(Avahi::common UNKNOWN IMPORTED)
+#    set_target_properties(Avahi::common PROPERTIES
+#            IMPORTED_LOCATION "${Avahi_common_LIBRARY}"
+#            INTERFACE_INCLUDE_DIRECTORIES "${Avahi_INCLUDE_DIR}"
+#            INTERFACE_LINK_LIBRARIES "Threads::Threads"
+#    )
+#endif()
+#
+#if(Avahi_FOUND AND NOT TARGET Avahi::client)
+#    add_library(Avahi::client UNKNOWN IMPORTED)
+#    set_target_properties(Avahi::client PROPERTIES
+#            IMPORTED_LOCATION "${Avahi_client_LIBRARY}"
+#            INTERFACE_INCLUDE_DIRECTORIES "${Avahi_INCLUDE_DIR}"
+#            INTERFACE_LINK_LIBRARIES "Avahi::common;DBus::DBus"
+#    )
+#endif()
+#
+#if(Avahi_FOUND AND NOT TARGET Avahi::compat-libdns_sd)
+#    add_library(Avahi::compat-libdns_sd UNKNOWN IMPORTED)
+#    set_target_properties(Avahi::compat-libdns_sd PROPERTIES
+#            IMPORTED_LOCATION "${Avahi_compat-libdns_sd_LIBRARY}"
+#            INTERFACE_INCLUDE_DIRECTORIES "${Avahi_INCLUDE_DIR}"
+#            INTERFACE_LINK_LIBRARIES "Avahi::client"
+#    )
+#endif()
 
 mark_as_advanced(
         Avahi_INCLUDE_DIR
