@@ -10,6 +10,7 @@ All platforms work out of the box; some offer optional system runtimes for impro
 - **Android**: NSD via JNI
 - **iOS**: Bonjour
 - **ESP32**: ESP mDNS
+- **Arduino**: Bundled mDNS
 
 ## License
 
