@@ -37,12 +37,10 @@ int main() {
 
   while (true) {
     std::vector<KNSocket> sockets(16);
-    size_t count =
-        KNServiceGetSockets(discovery, service, sockets.data(), sockets.size());
+    size_t count = KNServiceGetSockets(discovery, service, sockets.data(), sockets.size());
     if (count > sockets.size()) {
       sockets.resize(count);
-      count = KNServiceGetSockets(discovery, service, sockets.data(),
-                                  sockets.size());
+      count = KNServiceGetSockets(discovery, service, sockets.data(), sockets.size());
     }
 
     if (count == 0) {
@@ -63,7 +61,7 @@ int main() {
         max_fd = sockets[i];
     }
 
-    struct timeval timeout;
+    struct timeval timeout{};
     timeout.tv_sec = 0;
     timeout.tv_usec = 100000; // 100ms
 
@@ -76,6 +74,7 @@ int main() {
       for (size_t i = 0; i < count; ++i) {
         if (FD_ISSET(sockets[i], &read_fds)) {
           KNServiceNotify(discovery, service, sockets[i]);
+          std::cout << "polled socket " << sockets[i] << std::endl;
         }
       }
     } else if (ret < 0) {

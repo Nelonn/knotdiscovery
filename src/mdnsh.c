@@ -87,14 +87,15 @@ struct KNQueryHandle {
   int running;
 };
 
-static const char *dns_sd_name = "_services._dns-sd._udp.local.";
+static const char* dns_sd_name = "_services._dns-sd._udp.local.";
+static const size_t dns_sd_name_len = 29;
 
-static void sockaddrToKNIpAddress(const struct sockaddr *addr,
-                                  KNIpAddress *ip_addr) {
+static void sockaddrToKNIpAddress(const struct sockaddr*addr,
+                                  KNIpAddress* ip_addr) {
   if (!addr || !ip_addr)
     return;
   if (addr->sa_family == AF_INET) {
-    struct sockaddr_in *addr4 = (struct sockaddr_in *)addr;
+    struct sockaddr_in *addr4 = (struct sockaddr_in*)addr;
     ip_addr->family = KN_IP_V4;
     memcpy(ip_addr->addr.v4, &addr4->sin_addr, 4);
   } else if (addr->sa_family == AF_INET6) {
@@ -104,7 +105,7 @@ static void sockaddrToKNIpAddress(const struct sockaddr *addr,
   }
 }
 
-static struct sockaddr_in knIpToSockaddr(const KNIpAddress *ip) {
+static struct sockaddr_in knIpToSockaddr(const KNIpAddress* ip) {
   struct sockaddr_in addr;
   memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
@@ -114,7 +115,7 @@ static struct sockaddr_in knIpToSockaddr(const KNIpAddress *ip) {
   return addr;
 }
 
-static struct sockaddr_in6 knIpToSockaddr6(const KNIpAddress *ip) {
+static struct sockaddr_in6 knIpToSockaddr6(const KNIpAddress* ip) {
   struct sockaddr_in6 addr;
   memset(&addr, 0, sizeof(addr));
   addr.sin6_family = AF_INET6;
@@ -138,17 +139,18 @@ static int countCommonLeadingBits(uint32_t int1, uint32_t int2) {
   return count;
 }
 
-static KNIpAddress findBestAddressMatchV4(const KNServiceHandle *handle,
-                                          const struct sockaddr *from) {
+static KNIpAddress findBestAddressMatchV4(const KNServiceHandle* handle,
+                                          const struct sockaddr* from) {
   if (handle->address_count == 0 || !from || from->sa_family != AF_INET) {
     for (size_t i = 0; i < handle->address_count; i++) {
-      if (handle->addresses[i].family == KN_IP_V4)
+      if (handle->addresses[i].family == KN_IP_V4) {
         return handle->addresses[i];
+      }
     }
     KNIpAddress empty = {0};
     return empty;
   }
-  struct sockaddr_in *other_addr = (struct sockaddr_in *)from;
+  struct sockaddr_in *other_addr = (struct sockaddr_in*)from;
   uint32_t other_ip = ntohl(other_addr->sin_addr.s_addr);
   int best_bits = -1;
   size_t best_idx = 0;
@@ -166,14 +168,15 @@ static KNIpAddress findBestAddressMatchV4(const KNServiceHandle *handle,
       }
     }
   }
-  if (found)
+  if (found) {
     return handle->addresses[best_idx];
+  }
   KNIpAddress empty = {0};
   return empty;
 }
 
-static KNIpAddress findBestAddressMatchV6(const struct KNServiceHandle *handle,
-                                          const struct sockaddr *from) {
+static KNIpAddress findBestAddressMatchV6(const KNServiceHandle* handle,
+                                          const struct sockaddr* from) {
   for (size_t i = 0; i < handle->address_count; i++) {
     if (handle->addresses[i].family == KN_IP_V6)
       return handle->addresses[i];
@@ -182,13 +185,17 @@ static KNIpAddress findBestAddressMatchV6(const struct KNServiceHandle *handle,
   return empty;
 }
 
-static mdns_record_t createMdnsRecord(const struct KNServiceHandle *handle,
+static mdns_record_t createMdnsRecord(const KNServiceHandle* handle,
                                       mdns_record_type_t type,
-                                      const struct sockaddr *from,
+                                      const struct sockaddr* from,
                                       size_t txt_index) {
-  mdns_record_t answer;
-  memset(&answer, 0, sizeof(answer));
+  mdns_record_t answer = {0};
   answer.type = type;
+  answer.rclass = MDNS_CLASS_IN;
+  if (type != MDNS_RECORDTYPE_PTR) {
+    answer.rclass |= MDNS_CACHE_FLUSH;
+  }
+  answer.ttl = 120;
   switch (type) {
   case MDNS_RECORDTYPE_PTR:
     answer.name = handle->service_type;
@@ -222,8 +229,8 @@ static mdns_record_t createMdnsRecord(const struct KNServiceHandle *handle,
   return answer;
 }
 
-static mdns_sock_t *openServiceSockets(size_t *socket_count, int port) {
-  mdns_sock_t *sockets = NULL;
+static mdns_sock_t* openServiceSockets(size_t* socket_count, int port) {
+  mdns_sock_t* sockets = NULL;
   *socket_count = 0;
 #if defined(_WIN32)
   IP_ADAPTER_ADDRESSES *adapter_address = NULL;
@@ -246,20 +253,34 @@ static mdns_sock_t *openServiceSockets(size_t *socket_count, int port) {
         IP_ADAPTER_UNICAST_ADDRESS *unicast = adapter->FirstUnicastAddress;
         while (unicast) {
           if (unicast->Address.lpSockaddr->sa_family == AF_INET) {
-            int sock = mdns_socket_open_ipv4(
-                (struct sockaddr_in *)unicast->Address.lpSockaddr);
+            struct sockaddr_in saddr =
+                *(struct sockaddr_in*)unicast->Address.lpSockaddr;
+            saddr.sin_port = htons((unsigned short)(port ? port : MDNS_PORT));
+            int sock = mdns_socket_open_ipv4(&saddr);
             if (sock >= 0) {
-              sockets = (mdns_sock_t *)realloc(
+              mdns_sock_t* new_sockets = (mdns_sock_t*)realloc(
                   sockets, sizeof(mdns_sock_t) * (*socket_count + 1));
-              sockets[(*socket_count)++] = sock;
+              if (new_sockets) {
+                sockets = new_sockets;
+                sockets[(*socket_count)++] = sock;
+              } else {
+                mdns_socket_close(sock);
+              }
             }
           } else if (unicast->Address.lpSockaddr->sa_family == AF_INET6) {
-            int sock = mdns_socket_open_ipv6(
-                (struct sockaddr_in6 *)unicast->Address.lpSockaddr);
+            struct sockaddr_in6 saddr =
+                *(struct sockaddr_in6*)unicast->Address.lpSockaddr;
+            saddr.sin6_port = htons((unsigned short)(port ? port : MDNS_PORT));
+            int sock = mdns_socket_open_ipv6(&saddr);
             if (sock >= 0) {
-              sockets = (mdns_sock_t *)realloc(
+              mdns_sock_t* new_sockets = (mdns_sock_t*)realloc(
                   sockets, sizeof(mdns_sock_t) * (*socket_count + 1));
-              sockets[(*socket_count)++] = sock;
+              if (new_sockets) {
+                sockets = new_sockets;
+                sockets[(*socket_count)++] = sock;
+              } else {
+                mdns_socket_close(sock);
+              }
             }
           }
           unicast = unicast->Next;
@@ -270,31 +291,43 @@ static mdns_sock_t *openServiceSockets(size_t *socket_count, int port) {
   }
   free(adapter_address);
 #else
-  struct ifaddrs *ifaddr = NULL;
+  struct ifaddrs* ifaddr = NULL;
   if (getifaddrs(&ifaddr) == 0) {
-    struct ifaddrs *ifa = ifaddr;
+    struct ifaddrs* ifa = ifaddr;
     while (ifa) {
       if (ifa->ifa_addr) {
         if (ifa->ifa_addr->sa_family == AF_INET) {
-          struct sockaddr_in *saddr = (struct sockaddr_in *)ifa->ifa_addr;
-          if (saddr->sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
-            mdns_sock_t sock = mdns_socket_open_ipv4(saddr);
+          struct sockaddr_in saddr = *(struct sockaddr_in *)ifa->ifa_addr;
+          if (saddr.sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
+            saddr.sin_port = htons((unsigned short)(port ? port : MDNS_PORT));
+            mdns_sock_t sock = mdns_socket_open_ipv4(&saddr);
             if (sock >= 0) {
-              sockets = (mdns_sock_t *)realloc(
+              mdns_sock_t *new_sockets = (mdns_sock_t *)realloc(
                   sockets, sizeof(mdns_sock_t) * (*socket_count + 1));
-              sockets[(*socket_count)++] = sock;
+              if (new_sockets) {
+                sockets = new_sockets;
+                sockets[(*socket_count)++] = sock;
+              } else {
+                mdns_socket_close(sock);
+              }
             }
           }
         } else if (ifa->ifa_addr->sa_family == AF_INET6) {
-          struct sockaddr_in6 *saddr = (struct sockaddr_in6 *)ifa->ifa_addr;
+          struct sockaddr_in6 saddr = *(struct sockaddr_in6 *)ifa->ifa_addr;
           static const unsigned char localhost[] = {0, 0, 0, 0, 0, 0, 0, 0,
                                                     0, 0, 0, 0, 0, 0, 0, 1};
-          if (memcmp(saddr->sin6_addr.s6_addr, localhost, 16) != 0) {
-            mdns_sock_t sock = mdns_socket_open_ipv6(saddr);
+          if (memcmp(saddr.sin6_addr.s6_addr, localhost, 16) != 0) {
+            saddr.sin6_port = htons((unsigned short)(port ? port : MDNS_PORT));
+            mdns_sock_t sock = mdns_socket_open_ipv6(&saddr);
             if (sock >= 0) {
-              sockets = (mdns_sock_t *)realloc(
+              mdns_sock_t *new_sockets = (mdns_sock_t *)realloc(
                   sockets, sizeof(mdns_sock_t) * (*socket_count + 1));
-              sockets[(*socket_count)++] = sock;
+              if (new_sockets) {
+                sockets = new_sockets;
+                sockets[(*socket_count)++] = sock;
+              } else {
+                mdns_socket_close(sock);
+              }
             }
           }
         }
@@ -307,63 +340,71 @@ static mdns_sock_t *openServiceSockets(size_t *socket_count, int port) {
   return sockets;
 }
 
-static void closeSockets(mdns_sock_t *sockets, size_t socket_count) {
-  for (size_t i = 0; i < socket_count; i++)
+static void closeSockets(mdns_sock_t* sockets, size_t socket_count) {
+  for (size_t i = 0; i < socket_count; i++) {
     mdns_socket_close(sockets[i]);
+  }
   free(sockets);
 }
 
-static void sendMulticastAnnounce(KNServiceHandle *handle, int is_goodbye) {
-  mdns_record_t ptr_record =
-      createMdnsRecord(handle, MDNS_RECORDTYPE_PTR, NULL, 0);
+static void sendMulticastAnnounce(KNServiceHandle* handle, int is_goodbye) {
+  mdns_record_t ptr_record = createMdnsRecord(handle, MDNS_RECORDTYPE_PTR, NULL, 0);
   mdns_record_t additional[16];
   size_t add_count = 0;
-  additional[add_count++] =
-      createMdnsRecord(handle, MDNS_RECORDTYPE_SRV, NULL, 0);
-  additional[add_count++] =
-      createMdnsRecord(handle, MDNS_RECORDTYPE_A, NULL, 0);
+  additional[add_count++] = createMdnsRecord(handle, MDNS_RECORDTYPE_SRV, NULL, 0);
+  int has_v4 = 0;
+  int has_v6 = 0;
+  for (size_t i = 0; i < handle->address_count; i++) {
+    if (handle->addresses[i].family == KN_IP_V4) has_v4 = 1;
+    if (handle->addresses[i].family == KN_IP_V6) has_v6 = 1;
+  }
+  if (has_v4) {
+    additional[add_count++] = createMdnsRecord(handle, MDNS_RECORDTYPE_A, NULL, 0);
+  }
+  if (has_v6) {
+    additional[add_count++] = createMdnsRecord(handle, MDNS_RECORDTYPE_AAAA, NULL, 0);
+  }
   for (size_t i = 0; i < handle->txt_count && add_count < 16; i++) {
-    additional[add_count++] =
-        createMdnsRecord(handle, MDNS_RECORDTYPE_TXT, NULL, i);
+    additional[add_count++] = createMdnsRecord(handle, MDNS_RECORDTYPE_TXT, NULL, i);
   }
   static char buffer[2048];
   for (size_t i = 0; i < handle->socket_count; i++) {
-    if (is_goodbye)
+    if (is_goodbye) {
       mdns_goodbye_multicast(handle->sockets[i], buffer, sizeof(buffer),
                              ptr_record, NULL, 0, additional, add_count);
-    else
+    } else {
       mdns_announce_multicast(handle->sockets[i], buffer, sizeof(buffer),
                               ptr_record, NULL, 0, additional, add_count);
+    }
   }
 }
 
-static int serviceCallback(mdns_sock_t sock, const struct sockaddr *from,
+static int serviceCallback(mdns_sock_t sock, const struct sockaddr* from,
                            size_t addrlen, mdns_entry_type_t entry,
                            uint16_t query_id, uint16_t rtype, uint16_t rclass,
-                           uint32_t ttl, const void *data, size_t size,
+                           uint32_t ttl, const void* data, size_t size,
                            size_t name_offset, size_t name_length,
                            size_t record_offset, size_t record_length,
-                           void *user_data) {
-  KNServiceHandle *handle = (KNServiceHandle *)user_data;
-  if (entry != MDNS_ENTRYTYPE_QUESTION)
-    return 0;
+                           void* user_data) {
+  KNServiceHandle* handle = (KNServiceHandle*)user_data;
+  if (entry != MDNS_ENTRYTYPE_QUESTION) return 0;
   char name_buffer[256];
   mdns_string_t name = mdns_string_extract(data, size, &name_offset,
                                            name_buffer, sizeof(name_buffer));
   static char sendbuffer[2048];
   int ret = 0;
-  if (name.length == strlen(dns_sd_name) &&
-      memcmp(name.str, dns_sd_name, name.length) == 0) {
+  if (name.length == dns_sd_name_len && memcmp(name.str, dns_sd_name, name.length) == 0) {
     if (rtype == MDNS_RECORDTYPE_PTR || rtype == MDNS_RECORDTYPE_ANY) {
       mdns_record_t answer =
           createMdnsRecord(handle, MDNS_RECORDTYPE_PTR, from, 0);
-      if (rclass & MDNS_UNICAST_RESPONSE)
+      if (rclass & MDNS_UNICAST_RESPONSE) {
         ret = mdns_query_answer_unicast(
             sock, from, addrlen, sendbuffer, sizeof(sendbuffer), query_id,
             rtype, name.str, name.length, answer, NULL, 0, NULL, 0);
-      else
+      } else {
         ret = mdns_query_answer_multicast(sock, sendbuffer, sizeof(sendbuffer),
                                           answer, NULL, 0, NULL, 0);
+      }
     }
   } else if (name.length == handle->service_type.length &&
              memcmp(name.str, handle->service_type.str, name.length) == 0) {
@@ -374,20 +415,30 @@ static int serviceCallback(mdns_sock_t sock, const struct sockaddr *from,
       size_t add_count = 0;
       additional[add_count++] =
           createMdnsRecord(handle, MDNS_RECORDTYPE_SRV, from, 0);
-      additional[add_count++] =
-          createMdnsRecord(handle, MDNS_RECORDTYPE_A, from, 0);
+      int has_v4 = 0;
+      int has_v6 = 0;
+      for (size_t i = 0; i < handle->address_count; i++) {
+        if (handle->addresses[i].family == KN_IP_V4) has_v4 = 1;
+        if (handle->addresses[i].family == KN_IP_V6) has_v6 = 1;
+      }
+      if (has_v4) {
+        additional[add_count++] = createMdnsRecord(handle, MDNS_RECORDTYPE_A, from, 0);
+      }
+      if (has_v6) {
+        additional[add_count++] = createMdnsRecord(handle, MDNS_RECORDTYPE_AAAA, from, 0);
+      }
       for (size_t i = 0; i < handle->txt_count && add_count < 16; i++)
         additional[add_count++] =
             createMdnsRecord(handle, MDNS_RECORDTYPE_TXT, from, i);
-      if (rclass & MDNS_UNICAST_RESPONSE)
+      if (rclass & MDNS_UNICAST_RESPONSE) {
         ret = mdns_query_answer_unicast(sock, from, addrlen, sendbuffer,
                                         sizeof(sendbuffer), query_id, rtype,
                                         name.str, name.length, answer, NULL, 0,
                                         additional, add_count);
-      else
-        ret =
-            mdns_query_answer_multicast(sock, sendbuffer, sizeof(sendbuffer),
+      } else {
+        ret = mdns_query_answer_multicast(sock, sendbuffer, sizeof(sendbuffer),
                                         answer, NULL, 0, additional, add_count);
+      }
     }
   } else if (name.length == handle->service_instance.length &&
              memcmp(name.str, handle->service_instance.str, name.length) == 0) {
@@ -396,48 +447,87 @@ static int serviceCallback(mdns_sock_t sock, const struct sockaddr *from,
           createMdnsRecord(handle, MDNS_RECORDTYPE_SRV, from, 0);
       mdns_record_t additional[16];
       size_t add_count = 0;
-      additional[add_count++] =
-          createMdnsRecord(handle, MDNS_RECORDTYPE_A, from, 0);
+      int has_v4 = 0;
+      int has_v6 = 0;
+      for (size_t i = 0; i < handle->address_count; i++) {
+        if (handle->addresses[i].family == KN_IP_V4) has_v4 = 1;
+        if (handle->addresses[i].family == KN_IP_V6) has_v6 = 1;
+      }
+      if (has_v4) {
+        additional[add_count++] = createMdnsRecord(handle, MDNS_RECORDTYPE_A, from, 0);
+      }
+      if (has_v6) {
+        additional[add_count++] = createMdnsRecord(handle, MDNS_RECORDTYPE_AAAA, from, 0);
+      }
       for (size_t i = 0; i < handle->txt_count && add_count < 16; i++)
         additional[add_count++] =
             createMdnsRecord(handle, MDNS_RECORDTYPE_TXT, from, i);
-      if (rclass & MDNS_UNICAST_RESPONSE)
+      if (rclass & MDNS_UNICAST_RESPONSE) {
         ret = mdns_query_answer_unicast(sock, from, addrlen, sendbuffer,
                                         sizeof(sendbuffer), query_id, rtype,
                                         name.str, name.length, answer, NULL, 0,
                                         additional, add_count);
-      else
+      } else {
         ret =
             mdns_query_answer_multicast(sock, sendbuffer, sizeof(sendbuffer),
                                         answer, NULL, 0, additional, add_count);
+      }
     }
   } else if (name.length == handle->hostname.length &&
              memcmp(name.str, handle->hostname.str, name.length) == 0) {
-    if (rtype == MDNS_RECORDTYPE_A || rtype == MDNS_RECORDTYPE_ANY) {
-      mdns_record_t answer =
-          createMdnsRecord(handle, MDNS_RECORDTYPE_A, from, 0);
-      if (rclass & MDNS_UNICAST_RESPONSE)
+    if (rtype == MDNS_RECORDTYPE_A || rtype == MDNS_RECORDTYPE_AAAA ||
+        rtype == MDNS_RECORDTYPE_ANY) {
+      mdns_record_t answer;
+      if (rtype == MDNS_RECORDTYPE_AAAA) {
+        answer = createMdnsRecord(handle, MDNS_RECORDTYPE_AAAA, from, 0);
+      } else {
+        answer = createMdnsRecord(handle, MDNS_RECORDTYPE_A, from, 0);
+      }
+
+      mdns_record_t additional[1];
+      size_t add_count = 0;
+      if (rtype == MDNS_RECORDTYPE_ANY || rtype == MDNS_RECORDTYPE_A) {
+        for (size_t i = 0; i < handle->address_count; i++) {
+          if (handle->addresses[i].family == KN_IP_V6) {
+            additional[add_count++] =
+                createMdnsRecord(handle, MDNS_RECORDTYPE_AAAA, from, 0);
+            break;
+          }
+        }
+      } else if (rtype == MDNS_RECORDTYPE_AAAA) {
+        for (size_t i = 0; i < handle->address_count; i++) {
+          if (handle->addresses[i].family == KN_IP_V4) {
+            additional[add_count++] =
+                createMdnsRecord(handle, MDNS_RECORDTYPE_A, from, 0);
+            break;
+          }
+        }
+      }
+
+      if (rclass & MDNS_UNICAST_RESPONSE) {
         ret = mdns_query_answer_unicast(
             sock, from, addrlen, sendbuffer, sizeof(sendbuffer), query_id,
-            rtype, name.str, name.length, answer, NULL, 0, NULL, 0);
-      else
+            rtype, name.str, name.length, answer, NULL, 0, additional,
+            add_count);
+      } else {
         ret = mdns_query_answer_multicast(sock, sendbuffer, sizeof(sendbuffer),
-                                          answer, NULL, 0, NULL, 0);
+                                          answer, NULL, 0, additional,
+                                          add_count);
+      }
     }
   }
   return ret;
 }
 
-static int browseCallback(mdns_sock_t sock, const struct sockaddr *from,
+static int browseCallback(mdns_sock_t sock, const struct sockaddr* from,
                           size_t addrlen, mdns_entry_type_t entry,
                           uint16_t query_id, uint16_t rtype, uint16_t rclass,
-                          uint32_t ttl, const void *data, size_t size,
+                          uint32_t ttl, const void* data, size_t size,
                           size_t name_offset, size_t name_length,
                           size_t record_offset, size_t record_length,
-                          void *user_data) {
+                          void* user_data) {
   KNBrowseHandle *handle = (KNBrowseHandle *)user_data;
-  if (entry != MDNS_ENTRYTYPE_ANSWER)
-    return 0;
+  if (entry != MDNS_ENTRYTYPE_ANSWER) return 0;
   if (rtype == MDNS_RECORDTYPE_PTR) {
     char service_name_buffer[256];
     mdns_string_t name =
@@ -454,16 +544,15 @@ static int browseCallback(mdns_sock_t sock, const struct sockaddr *from,
   return 0;
 }
 
-static int resolveCallback(mdns_sock_t sock, const struct sockaddr *from,
+static int resolveCallback(mdns_sock_t sock, const struct sockaddr* from,
                            size_t addrlen, mdns_entry_type_t entry,
                            uint16_t query_id, uint16_t rtype, uint16_t rclass,
-                           uint32_t ttl, const void *data, size_t size,
+                           uint32_t ttl, const void* data, size_t size,
                            size_t name_offset, size_t name_length,
                            size_t record_offset, size_t record_length,
-                           void *user_data) {
+                           void* user_data) {
   KNResolveHandle *handle = (KNResolveHandle *)user_data;
-  if (entry != MDNS_ENTRYTYPE_ANSWER)
-    return 0;
+  if (entry != MDNS_ENTRYTYPE_ANSWER) return 0;
   if (rtype == MDNS_RECORDTYPE_SRV) {
     mdns_record_srv_t srv = mdns_record_parse_srv(
         data, size, record_offset, record_length, handle->hostname_buffer,
@@ -521,14 +610,14 @@ static int resolveCallback(mdns_sock_t sock, const struct sockaddr *from,
   return 0;
 }
 
-static int queryCallback(mdns_sock_t sock, const struct sockaddr *from,
+static int queryCallback(mdns_sock_t sock, const struct sockaddr* from,
                          size_t addrlen, mdns_entry_type_t entry,
                          uint16_t query_id, uint16_t rtype, uint16_t rclass,
-                         uint32_t ttl, const void *data, size_t size,
+                         uint32_t ttl, const void* data, size_t size,
                          size_t name_offset, size_t name_length,
                          size_t record_offset, size_t record_length,
-                         void *user_data) {
-  KNQueryHandle *handle = (KNQueryHandle *)user_data;
+                         void* user_data) {
+  KNQueryHandle* handle = (KNQueryHandle*)user_data;
   if (entry != MDNS_ENTRYTYPE_ANSWER) return 0;
   KNIpAddress ip_addr = {0};
   if (rtype == MDNS_RECORDTYPE_A && handle->ip_family != KN_IP_V6) {
@@ -550,9 +639,9 @@ static int queryCallback(mdns_sock_t sock, const struct sockaddr *from,
 }
 
 static KNServiceHandle *
-MDNSH_RegisterService(KNDiscoveryAdapter *this, const char *service_name,
-                      const char *reg_type, uint16_t port,
-                      const KNTxtEntry *txt_entries, size_t txt_count) {
+MDNSH_RegisterService(KNDiscoveryAdapter* this, const char *service_name,
+                      const char* reg_type, uint16_t port,
+                      const KNTxtEntry* txt_entries, size_t txt_count) {
   KNServiceHandle *handle =
       (KNServiceHandle *)calloc(1, sizeof(KNServiceHandle));
   if (!handle)
@@ -569,10 +658,11 @@ MDNSH_RegisterService(KNDiscoveryAdapter *this, const char *service_name,
   handle->hostname.str = strdup(full_hostname);
   handle->hostname.length = strlen(full_hostname);
   char full_reg_type[256];
-  if (reg_type[strlen(reg_type) - 1] == '.')
+  if (reg_type[strlen(reg_type) - 1] == '.') {
     snprintf(full_reg_type, sizeof(full_reg_type), "%s", reg_type);
-  else
+  } else {
     snprintf(full_reg_type, sizeof(full_reg_type), "%s.", reg_type);
+  }
   handle->service_type.str = strdup(full_reg_type);
   handle->service_type.length = strlen(full_reg_type);
   char full_instance[512];
@@ -590,8 +680,7 @@ MDNSH_RegisterService(KNDiscoveryAdapter *this, const char *service_name,
       handle->txt_records[i].data.txt.key.str = strdup(txt_entries[i].key);
       handle->txt_records[i].data.txt.key.length = strlen(txt_entries[i].key);
       handle->txt_records[i].data.txt.value.str = strdup(txt_entries[i].value);
-      handle->txt_records[i].data.txt.value.length =
-          strlen(txt_entries[i].value);
+      handle->txt_records[i].data.txt.value.length = strlen(txt_entries[i].value);
     }
   }
 #if defined(_WIN32)
@@ -614,11 +703,14 @@ MDNSH_RegisterService(KNDiscoveryAdapter *this, const char *service_name,
       if (adapter->OperStatus == IfOperStatusUp) {
         IP_ADAPTER_UNICAST_ADDRESS *unicast = adapter->FirstUnicastAddress;
         while (unicast) {
-          handle->addresses = (KNIpAddress *)realloc(
+          KNIpAddress *new_addresses = (KNIpAddress *)realloc(
               handle->addresses,
               sizeof(KNIpAddress) * (handle->address_count + 1));
-          sockaddrToKNIpAddress(unicast->Address.lpSockaddr,
-                                &handle->addresses[handle->address_count++]);
+          if (new_addresses) {
+            handle->addresses = new_addresses;
+            sockaddrToKNIpAddress(unicast->Address.lpSockaddr,
+                                  &handle->addresses[handle->address_count++]);
+          }
           unicast = unicast->Next;
         }
       }
@@ -627,79 +719,75 @@ MDNSH_RegisterService(KNDiscoveryAdapter *this, const char *service_name,
   }
   free(adapter_address);
 #else
-  struct ifaddrs *ifaddr = NULL;
+  struct ifaddrs* ifaddr = NULL;
   if (getifaddrs(&ifaddr) == 0) {
-    struct ifaddrs *ifa = ifaddr;
+    struct ifaddrs* ifa = ifaddr;
     while (ifa) {
       if (ifa->ifa_addr && (ifa->ifa_addr->sa_family == AF_INET ||
                             ifa->ifa_addr->sa_family == AF_INET6)) {
-        handle->addresses = (KNIpAddress *)realloc(
+        KNIpAddress *new_addresses = (KNIpAddress *)realloc(
             handle->addresses,
             sizeof(KNIpAddress) * (handle->address_count + 1));
-        sockaddrToKNIpAddress(ifa->ifa_addr,
-                              &handle->addresses[handle->address_count++]);
+        if (new_addresses) {
+          handle->addresses = new_addresses;
+          sockaddrToKNIpAddress(ifa->ifa_addr,
+                                &handle->addresses[handle->address_count++]);
+        }
       }
       ifa = ifa->ifa_next;
     }
     freeifaddrs(ifaddr);
   }
 #endif
-  for (size_t i = 0; i < handle->socket_count; i++) {
-    static char buffer[2048];
-    mdns_socket_listen(handle->sockets[i], buffer, sizeof(buffer),
-                       serviceCallback, handle);
-  }
   sendMulticastAnnounce(handle, 0);
   return handle;
 }
 
-static size_t MDNSH_ServiceGetSockets(KNServiceHandle *handle,
-                                      KNSocket *sockets, size_t count) {
-  if (!handle)
-    return 0;
-  size_t copy_count =
-      handle->socket_count < count ? handle->socket_count : count;
-  if (sockets && copy_count > 0)
-    for (size_t i = 0; i < copy_count; i++)
+static size_t MDNSH_ServiceGetSockets(KNServiceHandle* handle,
+                                      KNSocket* sockets, size_t count) {
+  if (!handle) return 0;
+  size_t copy_count = handle->socket_count < count ? handle->socket_count : count;
+  if (sockets && copy_count > 0) {
+    for (size_t i = 0; i < copy_count; i++) {
       sockets[i] = handle->sockets[i];
+    }
+  }
   return handle->socket_count;
 }
 
-static void MDNSH_ServiceNotify(KNServiceHandle *handle, KNSocket socket) {
-  if (!handle)
-    return;
+static void MDNSH_ServiceNotify(KNServiceHandle* handle, KNSocket socket) {
+  if (!handle) return;
   int found = 0;
-  for (size_t i = 0; i < handle->socket_count; i++)
+  for (size_t i = 0; i < handle->socket_count; i++) {
     if (handle->sockets[i] == socket) {
       found = 1;
       break;
     }
-  if (!found)
-    return;
+  }
+  if (!found) return;
   static char buffer[2048];
   mdns_socket_listen(socket, buffer, sizeof(buffer), serviceCallback, handle);
 }
 
-static void MDNSH_ServiceStop(KNServiceHandle *handle) {
-  if (!handle)
-    return;
+static void MDNSH_ServiceStop(KNServiceHandle* handle) {
+  if (!handle) return;
   sendMulticastAnnounce(handle, 1);
   closeSockets(handle->sockets, handle->socket_count);
   if (handle->service_instance.str) {
-    free((void *)handle->service_instance.str);
+    free((void*)handle->service_instance.str);
   }
   if (handle->service_type.str) {
-    free((void *)handle->service_type.str);
+    free((void*)handle->service_type.str);
   }
   if (handle->hostname.str) {
-    free((void *)handle->hostname.str);
+    free((void*)handle->hostname.str);
   }
   for (size_t i = 0; i < handle->txt_count; i++) {
     if (handle->txt_records[i].data.txt.key.str) {
-      free((void *)handle->txt_records[i].data.txt.key.str);
+      free((void*)handle->txt_records[i].data.txt.key.str);
     }
     if (handle->txt_records[i].data.txt.value.str) {
-      free((void *)handle->txt_records[i].data.txt.value.str);
+      free((void*)handle->txt_records[i].data.txt.value.str);
     }
   }
   if (handle->txt_records) {
@@ -711,14 +799,13 @@ static void MDNSH_ServiceStop(KNServiceHandle *handle) {
   free(handle);
 }
 
-static KNBrowseHandle *MDNSH_BrowseServices(KNDiscoveryAdapter *this,
-                                            const char *reg_type,
-                                            const char *domain,
+static KNBrowseHandle* MDNSH_BrowseServices(KNDiscoveryAdapter* this,
+                                            const char* reg_type,
+                                            const char* domain,
                                             KNBrowseCallback callback,
-                                            void *user_data) {
-  KNBrowseHandle *handle = (KNBrowseHandle *)calloc(1, sizeof(KNBrowseHandle));
-  if (!handle)
-    return NULL;
+                                            void* user_data) {
+  KNBrowseHandle* handle = (KNBrowseHandle *)calloc(1, sizeof(KNBrowseHandle));
+  if (!handle) return NULL;
   handle->sockets = openServiceSockets(&handle->socket_count, 0);
   if (!handle->sockets || handle->socket_count == 0) {
     free(handle);
@@ -736,59 +823,60 @@ static KNBrowseHandle *MDNSH_BrowseServices(KNDiscoveryAdapter *this,
   handle->callback = callback;
   handle->user_data = user_data;
   handle->running = 1;
-  for (size_t i = 0; i < handle->socket_count; i++)
+  for (size_t i = 0; i < handle->socket_count; i++) {
     mdns_query_send(handle->sockets[i], MDNS_RECORDTYPE_PTR, reg_type,
                     strlen(reg_type), NULL, 0, 0);
+  }
   return handle;
 }
 
-static size_t MDNSH_BrowseGetSockets(KNBrowseHandle *handle, KNSocket *sockets,
+static size_t MDNSH_BrowseGetSockets(KNBrowseHandle* handle, KNSocket* sockets,
                                      size_t count) {
-  if (!handle)
-    return 0;
+  if (!handle) return 0;
   size_t copy_count =
       handle->socket_count < count ? handle->socket_count : count;
-  if (sockets && copy_count > 0)
-    for (size_t i = 0; i < copy_count; i++)
+  if (sockets && copy_count > 0) {
+    for (size_t i = 0; i < copy_count; i++) {
       sockets[i] = handle->sockets[i];
+    }
+  }
   return handle->socket_count;
 }
 
-static void MDNSH_BrowseNotify(KNBrowseHandle *handle, KNSocket socket) {
-  if (!handle || !handle->running)
-    return;
+static void MDNSH_BrowseNotify(KNBrowseHandle* handle, KNSocket socket) {
+  if (!handle || !handle->running) return;
   int found = 0;
-  for (size_t i = 0; i < handle->socket_count; i++)
+  for (size_t i = 0; i < handle->socket_count; i++) {
     if (handle->sockets[i] == socket) {
       found = 1;
       break;
     }
-  if (!found)
-    return;
+  }
+  if (!found) return;
   static char buffer[2048];
   mdns_query_recv(socket, buffer, sizeof(buffer), browseCallback, handle, 0);
 }
 
-static void MDNSH_BrowseStop(KNBrowseHandle *handle) {
-  if (!handle)
-    return;
+static void MDNSH_BrowseStop(KNBrowseHandle* handle) {
+  if (!handle) return;
   handle->running = 0;
   closeSockets(handle->sockets, handle->socket_count);
-  if (handle->service_type.str)
+  if (handle->service_type.str) {
     free((void *)handle->service_type.str);
-  if (handle->domain.str)
+  }
+  if (handle->domain.str) {
     free((void *)handle->domain.str);
+  }
   free(handle);
 }
 
-static KNResolveHandle *
-MDNSH_ResolveService(KNDiscoveryAdapter *this, const char *service_name,
-                     const char *reg_type, const char *domain,
-                     KNResolveCallback callback, void *user_data) {
+static KNResolveHandle*
+MDNSH_ResolveService(KNDiscoveryAdapter* this, const char* service_name,
+                     const char* reg_type, const char* domain,
+                     KNResolveCallback callback, void* user_data) {
   KNResolveHandle *handle =
       (KNResolveHandle *)calloc(1, sizeof(KNResolveHandle));
-  if (!handle)
-    return NULL;
+  if (!handle) return NULL;
   handle->sockets = openServiceSockets(&handle->socket_count, 0);
   if (!handle->sockets || handle->socket_count == 0) {
     free(handle);
@@ -809,72 +897,74 @@ MDNSH_ResolveService(KNDiscoveryAdapter *this, const char *service_name,
   handle->user_data = user_data;
   handle->running = 1;
   char full_name[512];
-  if (domain && strlen(domain) > 0)
+  if (domain && strlen(domain) > 0) {
     snprintf(full_name, sizeof(full_name), "%s.%s.%s", service_name, reg_type,
              domain);
-  else
+  } else {
     snprintf(full_name, sizeof(full_name), "%s.%s.local.", service_name,
              reg_type);
+  }
   mdns_query_t query;
   query.type = MDNS_RECORDTYPE_PTR;
   query.name = full_name;
   query.length = strlen(full_name);
   static char buffer[2048];
-  for (size_t i = 0; i < handle->socket_count; i++)
-    mdns_multiquery_send(handle->sockets[i], &query, 1, buffer, sizeof(buffer),
-                         0);
+  for (size_t i = 0; i < handle->socket_count; i++) {
+    mdns_multiquery_send(handle->sockets[i], &query, 1, buffer, sizeof(buffer), 0);
+  }
   return handle;
 }
 
 static size_t MDNSH_ResolveGetSockets(KNResolveHandle *handle,
                                       KNSocket *sockets, size_t count) {
-  if (!handle)
-    return 0;
+  if (!handle) return 0;
   size_t copy_count =
       handle->socket_count < count ? handle->socket_count : count;
-  if (sockets && copy_count > 0)
-    for (size_t i = 0; i < copy_count; i++)
+  if (sockets && copy_count > 0) {
+    for (size_t i = 0; i < copy_count; i++) {
       sockets[i] = handle->sockets[i];
+    }
+  }
   return handle->socket_count;
 }
 
 static void MDNSH_ResolveNotify(KNResolveHandle *handle, KNSocket socket) {
-  if (!handle || !handle->running)
-    return;
+  if (!handle || !handle->running) return;
   int found = 0;
-  for (size_t i = 0; i < handle->socket_count; i++)
+  for (size_t i = 0; i < handle->socket_count; i++) {
     if (handle->sockets[i] == socket) {
       found = 1;
       break;
     }
-  if (!found)
-    return;
+  }
+  if (!found) return;
   static char buffer[2048];
   mdns_query_recv(socket, buffer, sizeof(buffer), resolveCallback, handle, 0);
 }
 
-static void MDNSH_ResolveStop(KNResolveHandle *handle) {
-  if (!handle)
-    return;
+static void MDNSH_ResolveStop(KNResolveHandle* handle) {
+  if (!handle) return;
   handle->running = 0;
   closeSockets(handle->sockets, handle->socket_count);
-  if (handle->service_name.str)
+  if (handle->service_name.str) {
     free((void *)handle->service_name.str);
-  if (handle->service_type.str)
+  }
+  if (handle->service_type.str) {
     free((void *)handle->service_type.str);
-  if (handle->domain.str)
+  }
+  if (handle->domain.str) {
     free((void *)handle->domain.str);
+  }
   free(handle);
 }
 
-static KNQueryHandle *MDNSH_QueryIpAddress(KNDiscoveryAdapter *this,
-                                           const char *host_name,
+static KNQueryHandle *MDNSH_QueryIpAddress(KNDiscoveryAdapter* this,
+                                           const char* host_name,
                                            KNIpFamily ip_family,
                                            KNQueryCallback callback,
-                                           void *user_data) {
+                                           void* user_data) {
   KNQueryHandle *handle = (KNQueryHandle *)calloc(1, sizeof(KNQueryHandle));
-  if (!handle)
-    return NULL;
+  if (!handle) return NULL;
   handle->sockets = openServiceSockets(&handle->socket_count, 0);
   if (!handle->sockets || handle->socket_count == 0) {
     free(handle);
@@ -897,58 +987,55 @@ static KNQueryHandle *MDNSH_QueryIpAddress(KNDiscoveryAdapter *this,
   return handle;
 }
 
-static size_t MDNSH_QueryGetSockets(KNQueryHandle *handle, KNSocket *sockets,
+static size_t MDNSH_QueryGetSockets(KNQueryHandle* handle, KNSocket *sockets,
                                     size_t count) {
-  if (!handle)
-    return 0;
+  if (!handle) return 0;
   size_t copy_count =
       handle->socket_count < count ? handle->socket_count : count;
-  if (sockets && copy_count > 0)
-    for (size_t i = 0; i < copy_count; i++)
+  if (sockets && copy_count > 0) {
+    for (size_t i = 0; i < copy_count; i++) {
       sockets[i] = handle->sockets[i];
+    }
+  }
   return handle->socket_count;
 }
 
-static void MDNSH_QueryNotify(KNQueryHandle *handle, KNSocket socket) {
-  if (!handle || !handle->running)
-    return;
+static void MDNSH_QueryNotify(KNQueryHandle* handle, KNSocket socket) {
+  if (!handle || !handle->running) return;
   int found = 0;
-  for (size_t i = 0; i < handle->socket_count; i++)
+  for (size_t i = 0; i < handle->socket_count; i++) {
     if (handle->sockets[i] == socket) {
       found = 1;
       break;
     }
-  if (!found)
-    return;
+  }
+  if (!found) return;
   static char buffer[2048];
   mdns_query_recv(socket, buffer, sizeof(buffer), queryCallback, handle, 0);
 }
 
-static void MDNSH_QueryStop(KNQueryHandle *handle) {
-  if (!handle)
-    return;
+static void MDNSH_QueryStop(KNQueryHandle* handle) {
+  if (!handle) return;
   handle->running = 0;
   closeSockets(handle->sockets, handle->socket_count);
-  free((void *)handle->host_name.str);
+  free((void*)handle->host_name.str);
   free(handle);
 }
 
-static void MDNSH_Free(KNDiscoveryAdapter *handle) {
+static void MDNSH_Free(KNDiscoveryAdapter* handle) {
 #if defined(_WIN32)
   WSACleanup();
 #endif
   free(handle);
 }
 
-KNDiscoveryAdapter *KNDiscovery_mdnsh_create() {
+KNDiscoveryAdapter* KNDiscovery_mdnsh_create() {
 #if defined(_WIN32)
   WSADATA wsa_data;
-  if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0)
-    return NULL;
+  if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) return NULL;
 #endif
   KNDiscoveryAdapter *adapter = calloc(1, sizeof(KNDiscoveryAdapter));
-  if (!adapter)
-    return NULL;
+  if (!adapter) return NULL;
   adapter->RegisterService = MDNSH_RegisterService;
   adapter->ServiceGetSockets = MDNSH_ServiceGetSockets;
   adapter->ServiceNotify = MDNSH_ServiceNotify;
