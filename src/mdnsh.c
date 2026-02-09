@@ -27,7 +27,7 @@
 
 #if defined(_WIN32)
 #define gethostname_func gethostname
-static char *strndup(const char *s, size_t n) {
+static char* strndup(const char *s, size_t n) {
   size_t len = strlen(s);
   if (len > n)
     len = n;
