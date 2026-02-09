@@ -684,11 +684,11 @@ MDNSH_RegisterService(KNDiscoveryAdapter* this, const char *service_name,
     }
   }
 #if defined(_WIN32)
-  IP_ADAPTER_ADDRESSES *adapter_address = NULL;
+  IP_ADAPTER_ADDRESSES* adapter_address = NULL;
   ULONG address_size = 8000;
   unsigned int ret;
   do {
-    adapter_address = (IP_ADAPTER_ADDRESSES *)malloc(address_size);
+    adapter_address = (IP_ADAPTER_ADDRESSES*)malloc(address_size);
     ret = GetAdaptersAddresses(AF_UNSPEC,
                                GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_ANYCAST,
                                NULL, adapter_address, &address_size);
@@ -698,7 +698,7 @@ MDNSH_RegisterService(KNDiscoveryAdapter* this, const char *service_name,
     }
   } while (ret == ERROR_BUFFER_OVERFLOW);
   if (ret == NO_ERROR) {
-    IP_ADAPTER_ADDRESSES *adapter = adapter_address;
+    IP_ADAPTER_ADDRESSES* adapter = adapter_address;
     while (adapter) {
       if (adapter->OperStatus == IfOperStatusUp) {
         IP_ADAPTER_UNICAST_ADDRESS *unicast = adapter->FirstUnicastAddress;
@@ -916,7 +916,7 @@ MDNSH_ResolveService(KNDiscoveryAdapter* this, const char* service_name,
 }
 
 static size_t MDNSH_ResolveGetSockets(KNResolveHandle *handle,
-                                      KNSocket *sockets, size_t count) {
+                                      KNSocket* sockets, size_t count) {
   if (!handle) return 0;
   size_t copy_count =
       handle->socket_count < count ? handle->socket_count : count;
@@ -958,7 +958,7 @@ static void MDNSH_ResolveStop(KNResolveHandle* handle) {
   free(handle);
 }
 
-static KNQueryHandle *MDNSH_QueryIpAddress(KNDiscoveryAdapter* this,
+static KNQueryHandle* MDNSH_QueryIpAddress(KNDiscoveryAdapter* this,
                                            const char* host_name,
                                            KNIpFamily ip_family,
                                            KNQueryCallback callback,
@@ -987,7 +987,7 @@ static KNQueryHandle *MDNSH_QueryIpAddress(KNDiscoveryAdapter* this,
   return handle;
 }
 
-static size_t MDNSH_QueryGetSockets(KNQueryHandle* handle, KNSocket *sockets,
+static size_t MDNSH_QueryGetSockets(KNQueryHandle* handle, KNSocket* sockets,
                                     size_t count) {
   if (!handle) return 0;
   size_t copy_count =
