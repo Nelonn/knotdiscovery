@@ -26,7 +26,7 @@ if (KNOTDISCOVERY_LIB_TYPE STREQUAL "SHARED_LIBRARY")
     #)
 
     target_compile_definitions(knotdiscovery PRIVATE KNOTDISCOVERY_DYNAMIC)
-    target_compile_definitions(knotdiscovery PUBLIC KNOTDISCOVERY_DYNAMIC_IMPORT)
+    target_compile_definitions(knotdiscovery INTERFACE KNOTDISCOVERY_DYNAMIC_IMPORT)
 endif ()
 
 if (ANDROID)
