@@ -17,8 +17,7 @@ add_library(knotdiscovery
         src/adapter.h
 )
 
-get_target_property(KNOTDISCOVERY_LIB_TYPE knotdiscovery TYPE)
-if (KNOTDISCOVERY_LIB_TYPE STREQUAL "SHARED_LIBRARY")
+if (BUILD_SHARED_LIBS)
     #set_target_properties(knotdiscovery PROPERTIES
     #        C_VISIBILITY_PRESET hidden
     #        CXX_VISIBILITY_PRESET hidden
